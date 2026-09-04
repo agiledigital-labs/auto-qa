@@ -1,0 +1,12 @@
+{
+  "domain": "agiledigital.atlassian.net",
+  "emailEnvVar": "JIRA_EMAIL",
+  "apiTokenEnvVar": "JIRA_API_TOKEN",
+  "projects": {
+    "MOW": {
+      "descriptionCustomField": "customfield_10031",
+      "qaStatementCustomField": "customfield_10034",
+      "qaStatementHeading": "Suggested QA Plan"
+    }
+  }
+}

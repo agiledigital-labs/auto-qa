@@ -1,0 +1,14 @@
+{
+  "name": "qa-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fetches a Jira ticket's QA statement, lints it, executes it via Playwright MCP, and renders a Jira-paste-ready results summary.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "jira-fetch": "node scripts/jira-fetch.mjs",
+    "render-summary": "node scripts/render-summary.mjs"
+  }
+}

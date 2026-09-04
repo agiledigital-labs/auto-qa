@@ -1,0 +1,14 @@
+{
+  "name": "qa-bot",
+  "description": "QA automation for tickets: lint and execute QA statements against browser UIs and HTTP APIs.",
+  "owner": {
+    "name": "Tim W James"
+  },
+  "plugins": [
+    {
+      "name": "qa-bot",
+      "source": "./plugins/qa-bot",
+      "description": "Lint and execute a ticket's QA statement against a deployed app (Playwright MCP) or API (curl)."
+    }
+  ]
+}

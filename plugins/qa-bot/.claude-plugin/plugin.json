@@ -1,0 +1,9 @@
+{
+  "name": "qa-bot",
+  "version": "0.3.0",
+  "description": "Takes a ticket's QA statement (from Jira via an Atlassian MCP connection, or pasted manually from any issue tracker), lints it, executes it against a deployed system (browser UI via Playwright MCP, HTTP APIs via curl) and produces a paste-ready results summary.",
+  "author": {
+    "name": "Tim W James"
+  },
+  "keywords": ["qa", "jira", "playwright", "api-testing", "testing"]
+}

@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "qa-bot": {
+      "source": {
+        "source": "directory",
+        "path": "./"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "qa-bot@qa-bot": true
+  }
+}

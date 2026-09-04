@@ -2,7 +2,7 @@
 name: qa-run
 description: Fetch a Jira ticket's QA statement, lint it, execute it via Playwright MCP against a deployed environment, and produce a Jira-paste-ready results summary.
 arguments: [ticket_key]
-argument-hint: [TICKET-KEY]
+argument-hint: "[TICKET-KEY]"
 disable-model-invocation: true
 ---
 
@@ -48,6 +48,8 @@ Check whether `context/<projectKey>.md` exists.
   ```
   This file is meant to be git-tracked and shared with the team — mention that to the user once created, and remind them that any secret values referenced by name here (e.g. env var names) must be added to `.env` locally by each person running this tool, since `.env` itself isn't shared.
 
+Also check whether `context/<projectKey>.app-notes.md` exists. This is a separate, auto-maintained knowledge base of *how to drive this app's UI* via Playwright MCP — navigation paths, form quirks, reliable selectors — built up by `qa-executor` itself across runs, not by asking you anything. Don't create it and don't ask the user about it if it's missing; an absent file just means `qa-executor` is starting from scratch and will create it after this run. Just note its path either way — you'll hand it to `qa-executor` in step 5 alongside the resolved QA context. It's a plain, secret-free file (UI facts only), so unlike the QA context it never needs to go through `resolve-context.mjs` — pass its path straight through.
+
 ## 3. Run QA Lint
 
 Spawn the `qa-linter` subagent (Agent tool, `subagent_type: "qa-linter"`). In its prompt, give it: the ticket's `description`, the `qaStatement`, the full contents of `context/<projectKey>.md`, and the exact target path `<run-dir>/lint.json` to write its findings to.
@@ -65,11 +67,38 @@ If `lint.json` has any finding with `severity: "blocking"`:
 
   If the user chooses to stop, write what you have so far (report the lint findings to the user) and end here — do not run `render-summary.mjs` on an incomplete run.
 
-Once there are no unresolved `blocking` findings (either none existed, or they were resolved above), continue.
+- For findings with `category: "external-access"` (a step requires visiting or authenticating to something outside the deployed app under test — e.g. a Confluence page): this is a scope decision, not a data gap, so there's no `suggestedQuestion` to relay. Present the finding to the user and use `AskUserQuestion` to ask how to handle *that specific step*:
+  - **Confirm it manually now (recommended)** — ask the user directly, in a plain follow-up question, for the outcome of that step (pass/fail, and any notes) as if they'd just checked it themselves.
+  - **Skip this step for this run** — it won't be attempted at all.
+  - **Let the automated session access it anyway** — only if the user is confident automated access to that specific resource is actually fine (e.g. it turns out to be a low-sensitivity internal page and they're OK with it being visited unattended).
+
+  For the first two choices, record a **pre-resolved step** and set it aside for step 5 — it will *not* be given to `qa-executor` and will not be attempted by automation:
+  - Manual confirmation → `{ stepText, status: "pass" | "fail" (per the user's answer), severity (only if "fail"), notes: "Manually verified by user, not automated: <their answer>" }`
+  - Skip → `{ stepText, status: "not-run", notes: "Skipped — external resource, not attempted by automated execution (user's choice)." }`
+
+  For the third choice, record nothing — leave that step in the QA statement as normal so `qa-executor` attempts it in step 5.
+
+  This decision is ticket-specific, not project-wide — don't write it to `context/<projectKey>.md`, unless the user explicitly says access to that resource should be trusted for future runs too, in which case add a note under `Known Gotchas` so a future lint pass on this project won't re-flag it. `external-access` findings don't need a re-lint pass once you've recorded how each one will be handled (unlike `missing-context`) — treat it as resolved immediately.
+
+Once there are no unresolved `blocking` findings (either none existed, or they were resolved above), continue. Keep whatever list of pre-resolved steps you built up in this section — you'll need it in step 5.
 
 ## 5. Execute the QA statement
 
-Spawn the `qa-executor` subagent (Agent tool, `subagent_type: "qa-executor"`). In its prompt, give it: the QA statement (as an ordered list — split it into discrete steps if it isn't already itemized), the full contents of `context/<projectKey>.md`, any inline clarification gathered in step 4, and the run directory path `<run-dir>` (it writes `<run-dir>/execution.json` and screenshots under `<run-dir>/screenshots/`).
+First, resolve the shared context's env var references into real values, server-side — the executor must never see raw `.env` contents or env var names it has to resolve itself, and those values must never pass through this session's own output either. Run:
+```
+node scripts/resolve-context.mjs <projectKey> <run-dir>/context.resolved.md
+```
+via Bash. If it exits non-zero, its stderr names the missing env var(s) — report that to the user (tell them which var(s) to add to `.env`) and **stop**, same as a step 1 failure. Its stdout only ever lists variable *names* it resolved, never values — do not attempt to read `.env` yourself or otherwise print/relay secret values into this conversation.
+
+Split the QA statement into an ordered list of discrete steps if it isn't already itemized, preserving any inline markdown links verbatim as you do (a step that references an external page, mockup, or ticket must keep that URL intact rather than being paraphrased). Remove from this list any step you recorded as a **pre-resolved step** in step 4 (matched by its original text) — those are not to be attempted by automation.
+
+- If steps remain after removing the pre-resolved ones, spawn the `qa-executor` subagent (Agent tool, `subagent_type: "qa-executor"`). In its prompt, give it: the remaining steps (as an ordered list), the path `<run-dir>/context.resolved.md` (tell it to `Read` this itself — do not paste its contents into the prompt), the path `context/<projectKey>.app-notes.md` from step 2 (tell it to `Read` this itself if it exists, and that it's responsible for creating/updating it at the end of its run), any inline clarification gathered in step 4, and the run directory path `<run-dir>` (it writes `<run-dir>/execution.json` and screenshots under `<run-dir>/screenshots/`).
+
+  Don't be concerned if `qa-executor` reports that something in `context/<projectKey>.app-notes.md` didn't match reality (a selector, a flow, a navigation path) — that file is a best-effort, self-revising knowledge base, not a source of truth, and `qa-executor` is expected to adapt and correct it rather than treat the mismatch as a QA statement failure.
+
+  Once it finishes, if you have any pre-resolved steps from step 4, read `<run-dir>/execution.json`, splice the pre-resolved step entries back in at their original positions in the QA statement's order, and rewrite the file so `execution.json` reflects every step of the original QA statement, not just the automated ones.
+
+- If every step was pre-resolved (no steps remain to hand to `qa-executor`), don't spawn it at all — write `<run-dir>/execution.json` yourself directly, containing just the pre-resolved step entries in their original order.
 
 ## 6. Render the summary
 

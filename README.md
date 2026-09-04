@@ -23,6 +23,8 @@ Given a Jira ticket number, fetches its description and QA statement, lints the 
 
 This is interactive by design: if the QA statement is missing context the tool can't infer (deployment URL, login, test data), it'll ask you and save the answer to `context/PROJ.md` so future tickets in the same project don't need to ask again. Commit that file (it's git-tracked) so the whole team shares the same context — never put actual secret values in it, only the *name* of the `.env` variable that holds the secret.
 
+A second file, `context/PROJ.app-notes.md`, builds up automatically alongside it — a knowledge base of *how to drive this app's UI* (navigation paths, form quirks, reliable selectors) that `qa-executor` writes and revises itself after every run, with no prompting needed. It's advisory: if the app's UI has moved on since the notes were written, that's expected and not treated as a bug — the executor just adapts and corrects the file. Commit it too so the whole team benefits from what past runs learned.
+
 Output lands in `runs/<TICKET-KEY>-<timestamp>/summary.md`, plus any failure screenshots alongside it in `screenshots/`. Nothing is posted back to Jira automatically — copy the summary into the ticket yourself.
 
 ## How it fits together
@@ -30,7 +32,7 @@ Output lands in `runs/<TICKET-KEY>-<timestamp>/summary.md`, plus any failure scr
 - `scripts/jira-fetch.mjs` — deterministic Jira REST API client; extracts description + QA statement.
 - `scripts/adf-to-md.mjs` — converts Jira's Atlassian Document Format to Markdown.
 - `.claude/agents/qa-linter.md` — subagent that reviews the QA statement for clarity, scope-consistency with the description, and missing context; severity-tags findings as `minor`/`major`/`blocking`.
-- `.claude/agents/qa-executor.md` — subagent that drives Playwright MCP through the QA statement's steps against the real deployed app, screenshotting failures.
+- `.claude/agents/qa-executor.md` — subagent that drives Playwright MCP through the QA statement's steps against the real deployed app, screenshotting failures, and maintains `context/PROJ.app-notes.md` (its own navigation knowledge base) as it goes.
 - `scripts/render-summary.mjs` — deterministic renderer that turns the linter's and executor's structured JSON output into the final Jira-paste-ready Markdown, including the accept/reject decision.
 - `.claude/skills/qa-run/SKILL.md` — orchestrates all of the above, and is the only piece that talks to you directly (missing-context prompts, blocking-issue decisions).
 

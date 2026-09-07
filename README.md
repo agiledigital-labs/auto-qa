@@ -2,6 +2,8 @@
 
 Given a Jira ticket number, fetches its description and QA statement, lints the QA statement for clarity/consistency/missing context, executes it against a deployed app via Playwright MCP, and produces a results summary ready to paste into the Jira ticket.
 
+![example](docs/example.png)
+
 ## One-time setup
 
 1. Install Node 18+, then run `npm install` (pulls in `@playwright/test`, used only if you opt into regression-script generation — see below).

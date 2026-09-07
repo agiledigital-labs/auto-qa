@@ -9,6 +9,10 @@
   },
   "scripts": {
     "jira-fetch": "node scripts/jira-fetch.mjs",
-    "render-summary": "node scripts/render-summary.mjs"
+    "render-summary": "node scripts/render-summary.mjs",
+    "test:regression": "playwright test --config=playwright.regression.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
   }
 }

@@ -4,7 +4,7 @@ Given a Jira ticket number, fetches its description and QA statement, lints the 
 
 ## One-time setup
 
-1. Install Node 18+ (this repo has no other dependencies).
+1. Install Node 18+, then run `npm install` (pulls in `@playwright/test`, used only if you opt into regression-script generation — see below).
 2. Copy `.env.example` to `.env` and fill in:
    - `JIRA_EMAIL` — the email of the Jira account to query with.
    - `JIRA_API_TOKEN` — generate one at https://id.atlassian.com/manage-profile/security/api-tokens
@@ -26,6 +26,11 @@ This is interactive by design: if the QA statement is missing context the tool c
 A second file, `context/PROJ.app-notes.md`, builds up automatically alongside it — a knowledge base of *how to drive this app's UI* (navigation paths, form quirks, reliable selectors) that `qa-executor` writes and revises itself after every run, with no prompting needed. It's advisory: if the app's UI has moved on since the notes were written, that's expected and not treated as a bug — the executor just adapts and corrects the file. Commit it too so the whole team benefits from what past runs learned.
 
 Output lands in `runs/<TICKET-KEY>-<timestamp>/summary.md`, plus any failure screenshots alongside it in `screenshots/`. Nothing is posted back to Jira automatically — copy the summary into the ticket yourself.
+
+Early on it also asks about optional extras (any combination, or none):
+- **A Playwright regression script** — a reusable `@playwright/test` spec covering this run's automated steps, written to `tests/regression/<TICKET-KEY>.spec.ts`. Unlike everything under `runs/`, this is git-tracked — review it before committing. Credentials/URLs are referenced by env var name (via `scripts/load-env.mjs`), never hardcoded. Re-run it any time with `npm run test:regression` (or `npx playwright test --config=playwright.regression.config.ts tests/regression/<TICKET-KEY>.spec.ts` for just one).
+- **Additional exploratory testing** — a bounded pass of extra checks around the feature (edge cases, error states, adjacent UI) beyond what the ticket's QA statement explicitly asks for, reported in its own section of `summary.md`.
+- **Accessibility/UX testing** — a bounded, heuristic pass (accessible names/labels, heading structure, keyboard/focus handling, ARIA correctness, obvious UX friction) over the pages/flows the QA statement touched, also reported in its own section of `summary.md`. Not a substitute for a real accessibility audit.
 
 ## How it fits together
 

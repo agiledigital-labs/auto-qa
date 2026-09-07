@@ -6,7 +6,12 @@
 // Reads from the run directory:
 //   ticket.json     { key, qaStatement, ... }        (required)
 //   lint.json       { findings: [...] }               (optional, treated as no findings if absent)
-//   execution.json  { steps: [...] }                  (optional, treated as not-yet-run if absent)
+//   execution.json  { steps: [...], explorationFindings: [...], accessibilityFindings: [...],
+//                      regressionScriptPath }
+//                                                      (optional, treated as not-yet-run if absent;
+//                                                       explorationFindings/accessibilityFindings/
+//                                                       regressionScriptPath are themselves optional
+//                                                       extras within execution.json)
 // Writes: <run-dir>/summary.md
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -38,9 +43,9 @@ function stepEmoji(step) {
   return step.severity === "minor" ? "⚠️" : "❌";
 }
 
-function renderStepsSection(steps, runDirName) {
+function renderStepsSection(steps, runDirName, heading, emptyText) {
   if (!steps.length) {
-    return "## QA Steps\n_Execution was not run for this ticket._\n\n";
+    return emptyText ? `## ${heading}\n${emptyText}\n\n` : "";
   }
   const lines = steps.map((s) => {
     const emoji = stepEmoji(s);
@@ -57,7 +62,7 @@ function renderStepsSection(steps, runDirName) {
     }
     return line;
   });
-  return `## QA Steps\n${lines.join("\n")}\n\n`;
+  return `## ${heading}\n${lines.join("\n")}\n\n`;
 }
 
 function decide(findings, steps) {
@@ -84,6 +89,12 @@ function renderFollowUps(findings, steps) {
   return `### Suggested follow-ups (non-blocking)\n${followUps.map((f) => `- ${f}`).join("\n")}\n`;
 }
 
+function renderRegressionScriptNote(scriptPath, runDir) {
+  if (!scriptPath) return "";
+  const rel = path.relative(runDir, scriptPath) || scriptPath;
+  return `## Regression Test\nA reusable Playwright regression script was generated: [\`${rel}\`](${rel}). Run it later with \`npx playwright test ${rel}\`.\n\n`;
+}
+
 function main() {
   const runDir = process.argv[2];
   if (!runDir) {
@@ -102,16 +113,22 @@ function main() {
 
   const findings = lint.findings ?? [];
   const steps = execution.steps ?? [];
-  const decision = decide(findings, steps);
+  const explorationFindings = execution.explorationFindings ?? [];
+  const accessibilityFindings = execution.accessibilityFindings ?? [];
+  const allSteps = [...steps, ...explorationFindings, ...accessibilityFindings];
+  const decision = decide(findings, allSteps);
 
   const parts = [
     `# QA Results — ${ticket.key}`,
     "",
     renderLintSection(findings),
-    renderStepsSection(steps, runDir),
+    renderStepsSection(steps, runDir, "QA Steps", "_Execution was not run for this ticket._"),
+    renderStepsSection(explorationFindings, runDir, "Exploratory Testing", ""),
+    renderStepsSection(accessibilityFindings, runDir, "Accessibility/UX Testing", ""),
+    renderRegressionScriptNote(execution.regressionScriptPath, runDir),
     `## Decision: ${decision.emoji} ${decision.label}`,
     "",
-    renderFollowUps(findings, steps),
+    renderFollowUps(findings, allSteps),
   ];
 
   const summary = parts.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";

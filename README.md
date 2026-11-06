@@ -39,7 +39,7 @@ Your Claude session may need to be reloaded after connecting MCP servers for the
 
 Any ticket reference works (`#412`, `ENG-77`, …). If it isn't shaped like `PROJ-123`, you're asked which project it belongs to.
 
-For Jira tickets, it also checks the ticket's hygiene alongside the lint. The ticket must be in one of the project's QA-ready statuses, which you're asked once and which are recorded as `QA-ready statuses` under `## Issue Tracker` in `context/PROJ.md` (record `not checked` to skip the check). Until they're recorded, non-interactive runs only reject statuses in Jira's To Do category. The check also looks for unfinished sub-tasks and unresolved `is blocked by` links. A ticket that isn't QA-ready stops the run, unless you choose to proceed anyway.
+For Jira tickets, it also checks the ticket's hygiene alongside the lint (both can be turned off - see below). The ticket must be in one of the project's QA-ready statuses, which you're asked once and which are recorded as `QA-ready statuses` under `## Issue Tracker` in `context/PROJ.md` (record `not checked` to skip the check). Until they're recorded, non-interactive runs only reject statuses in Jira's To Do category. The check also looks for unfinished sub-tasks and unresolved `is blocked by` links. A ticket that isn't QA-ready stops the run, unless you choose to proceed anyway.
 
 This is interactive by design. On the first run for a project it asks where the system is deployed (app and/or API URL) and how to authenticate, and saves the answers to `context/PROJ.md`. It also records which issue tracker the project uses. For Jira via MCP, it works out which field (or description heading) holds the QA statement, confirms that with you, and records it. Later, if a QA statement is missing context the tool can't infer (login, API auth, test data), it asks and saves that too, so future tickets in the same project don't need to ask again. Only project-level facts are saved, summarised at a high level; details specific to one ticket (a particular record, a fixture only that ticket needs) are used for that run only.
 
@@ -51,7 +51,13 @@ A second file, `context/PROJ.app-notes.md`, builds up automatically alongside it
 
 Output lands in `runs/<TICKET>-<timestamp>/summary.md` (gitignore `runs/`), with failure screenshots in `screenshots/` and API responses in `responses/` alongside it. Saved responses can contain tokens or personal data returned by the API, so keep `runs/` local. For Jira tickets with a connected Atlassian MCP server, the run then offers to post the summary as a comment on the ticket (`--post-comment` answers yes in advance). Otherwise, copy the summary into the ticket yourself. A posted comment refers to screenshots and saved responses by their local path - they're never uploaded, since they can contain tokens or personal data. Nothing else on the ticket is changed.
 
-Early on it also asks about optional extras (any combination, or none):
+Early on it asks which pre-execution checks to run. Both are on by default, and `--no-lint` / `--no-hygiene` turn them off in advance:
+- **QA statement lint** - reviews the QA statement for clarity, scope against the description, missing context and steps that reach outside the system under test. Without it, nothing catches those before execution.
+- **Ticket hygiene** (Jira tickets only) - the readiness checks described above.
+
+A skipped check is noted in `summary.md`, so a missing review isn't mistaken for a clean one.
+
+It also asks about optional extras, which are off by default (any combination, or none):
 - **A regression script** - a reusable script covering this run's automated steps. Unlike everything under `runs/`, this is meant to be git-tracked - review it before committing. Secrets are read from `.env` by name at run time (`process.loadEnvFile`, Node ≥ 20.12), never written into the script.
   - QA statements with browser UI steps get a `@playwright/test` spec (UI via `page`, API via `request`) at `tests/regression/<TICKET>.spec.ts`. Running it needs `@playwright/test` in the project: `npx playwright test tests/regression/<TICKET>.spec.ts`.
   - API-only QA statements get a dependency-free Node script (`node:test` + `fetch`) at `tests/regression/<TICKET>.test.mjs`: `node --test tests/regression/<TICKET>.test.mjs`. Playwright's default `testMatch` also matches `*.test.mjs`, so run Playwright specs by path (or narrow `testMatch`) if both kinds share the directory.
@@ -90,6 +96,7 @@ jq -e '.status == "completed" and .outcome != "reject"' runs/ci/result.json
 | `--ticket-file <path>` | JSON `{ "summary", "description", "qaStatement" }` (`description` optional), used instead of fetching the ticket. Without it, only Jira via an already-authenticated Atlassian MCP server works. |
 | `--run-dir <path>` | A fixed output directory (must not exist yet or be empty), so the pipeline knows where `result.json` is. |
 | `--extras <list>` | `qa-run` only: `regression`, `exploratory`, `accessibility`. None if omitted. |
+| `--no-lint`, `--no-hygiene` | `qa-run` only: skip the QA statement lint or the ticket hygiene checks, which otherwise always run. |
 | `--project <name>` | Project key, for ticket keys not shaped like `PROJ-123`. |
 | `--post-comment` | Post the report to the Jira ticket as a comment. Needs an authenticated Atlassian MCP server, and its `addOrEditJiraIssueComment` tool in `--allowedTools`. Without it, nothing is posted. |
 | `--retest [<run-dir>]` | `qa-run` only: re-test against a previous run, e.g. one restored from a pipeline artifact. Without a path, the latest run of the ticket under `runs/` is used, which also needs `Bash(ls:*)` allowed. Non-interactive runs without it are fresh runs. |

@@ -30,6 +30,8 @@ Sections in this order. Omit any section marked *(only if …)* when its conditi
 
 _QA statement supplied manually, not fetched from the issue tracker._   ← only if ticket.source is "manual"
 
+_Skipped for this run: <skipped checks>._   ← only if lint.skipped or hygiene.skipped is true; list "QA statement lint" and/or "ticket hygiene", in that order, joined with " and "
+
 _Re-test of `<retest.previousRunDir>` (previous decision: <previous decision>). Every step of the current QA statement was executed again._   ← only if retest exists
 
 ## QA Statement / Ticket Review                                    ← only if findings is non-empty

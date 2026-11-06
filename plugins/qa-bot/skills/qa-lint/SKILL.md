@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 Lint a ticket's QA statement without executing it. Arguments: `$ARGUMENTS`. Follow these steps in order, in this session (do not fork or delegate the whole skill to a subagent - the intake steps may need to ask the user questions directly).
 
-The arguments are a ticket key plus optional flags, described in `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/run-options.md` - read it before step 1. `--extras` doesn't apply to this skill. With `--non-interactive`, that file's non-interactive rules apply.
+The arguments are a ticket key plus optional flags, described in `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/run-options.md` - read it before step 1. `--extras`, `--no-lint` and `--no-hygiene` don't apply to this skill. With `--non-interactive`, that file's non-interactive rules apply.
 
 All paths below (`runs/`, `context/`, `.env`) are relative to the current project root, not to this plugin.
 

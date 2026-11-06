@@ -12,6 +12,8 @@ The skill's arguments are a ticket key followed by optional flags, in any order:
 | `--project <name>` | The project key, for ticket keys not shaped like `ABC-123` (intake step 1). |
 | `--ticket-file <path>` | Read the ticket from a JSON file instead of fetching it (intake step 3). |
 | `--run-dir <path>` | Write the run to this directory instead of `runs/<run-slug>-<timestamp>/` (intake step 1). |
+| `--no-lint` | `qa-run` only: skip the QA statement lint, which is on by default (step 4). |
+| `--no-hygiene` | `qa-run` only: skip the ticket hygiene checks, which are on by default (step 4). |
 | `--extras <list>` | `qa-run` only: comma-separated optional extras - `regression`, `exploratory`, `accessibility` (step 4). |
 | `--post-comment` | Post the report to the Jira ticket as a comment (see "Posting the result to Jira"). |
 | `--retest [<path>]` | `qa-run` only: re-test the ticket against a previous run - the run directory at `<path>` if given (the next argument, when it doesn't start with `--`), otherwise the most recent one found (step 0). |

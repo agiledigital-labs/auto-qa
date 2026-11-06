@@ -1,7 +1,7 @@
 ---
 name: qa-run
-description: Fetch a ticket's QA statement (from Jira via an Atlassian MCP connection, or pasted manually from any issue tracker), lint it, check the ticket is ready for QA, execute it against a deployed system (browser UI via Playwright MCP, HTTP APIs via curl) and produce a paste-ready results summary.
-argument-hint: "[TICKET-KEY] [--non-interactive] [--project KEY] [--ticket-file PATH] [--run-dir PATH] [--extras regression,exploratory,accessibility] [--retest [PATH]] [--post-comment]"
+description: Fetch a ticket's QA statement (from Jira via an Atlassian MCP connection, or pasted manually from any issue tracker), optionally lint it and check the ticket is ready for QA (both on by default), execute it against a deployed system (browser UI via Playwright MCP, HTTP APIs via curl) and produce a paste-ready results summary.
+argument-hint: "[TICKET-KEY] [--non-interactive] [--project KEY] [--ticket-file PATH] [--run-dir PATH] [--no-lint] [--no-hygiene] [--extras regression,exploratory,accessibility] [--retest [PATH]] [--post-comment]"
 disable-model-invocation: true
 ---
 
@@ -32,11 +32,17 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/ticket-intake.md` and follow its steps
 
 Also check whether `context/<projectKey>.app-notes.md` exists. This is a separate, auto-maintained knowledge base of *how to drive this system* - UI navigation paths, form quirks, reliable selectors, API auth flows and conventions - built up by `qa-executor` itself across runs, not by asking you anything. Don't create it and don't ask the user about it if it's missing; an absent file just means `qa-executor` is starting from scratch and will create it after this run. Just note its path - you'll hand it to `qa-executor` in step 7. It holds facts about the system only, no secrets.
 
-## 4. Classify the QA statement and choose optional extras
+## 4. Classify the QA statement and choose checks and extras
 
 Read the QA statement and decide which **surfaces** it exercises: **browser UI** (pages, forms, what a user sees), **HTTP API** (requests, endpoints, status codes, payloads), or both. If it's genuinely unclear, ask the user (**non-interactive:** treat it as both). You'll use this to check prerequisites and brief the executor in step 7.
 
-Then, unless `--extras` was given, use `AskUserQuestion` (`multiSelect: true`) to ask which optional extras this run should include, beyond the standard lint + execute + summarise flow:
+**Pre-execution checks** are on by default, unlike the extras below:
+- **QA statement lint** - the `qa-linter` review for clarity, scope, missing context and external access (step 5).
+- **Ticket hygiene** - the ticket-readiness checks in `ticket-hygiene.md` (step 5). These only apply when `ticket.json` has `source: "jira-mcp"`; for any other ticket, treat hygiene as unavailable, not skipped.
+
+`--no-lint` and `--no-hygiene` each turn one off. Unless either flag was given, use `AskUserQuestion` to ask which checks to run, as a single-select question: **Lint and ticket hygiene (Recommended)**, **Lint only**, **Ticket hygiene only**, **Neither**. If hygiene is unavailable, offer only **Lint (Recommended)** and **Skip lint**. Without lint, nothing flags missing context or steps that reach outside the system under test before execution, so say that when offering the options that drop it. **Non-interactive:** without the flags, run both.
+
+Then, unless `--extras` was given, ask which optional extras this run should include, beyond the standard flow. Use `AskUserQuestion` (`multiSelect: true`), in the same call as the checks question if you're asking both:
 - **Generate a regression script** - also produce a reusable, git-trackable script covering the automated steps of this run, for re-running as a regression check in the future: a `@playwright/test` spec (`tests/regression/<run-slug>.spec.ts`) if the statement involves browser UI, otherwise a dependency-free Node `node:test` script (`tests/regression/<run-slug>.test.mjs`). Name the format that applies when offering it. Adds some time; review the emitted script before trusting it.
 - **Additional exploratory testing** - after the QA statement's own steps, have the executor spend some bounded extra effort probing related edge cases the QA statement doesn't explicitly cover (boundary input, error states, adjacent UI; for APIs, missing/invalid auth and malformed requests). Adds some time; findings are reported separately from the formal QA steps.
 - **Accessibility/UX testing** - *offer this only if the statement involves browser UI.* After the QA statement's own steps, have the executor spend some bounded extra effort checking the pages/flows it just touched for accessibility and UX issues (missing labels/alt text, heading structure, keyboard/focus handling, unclear error messaging, obvious UX friction). Heuristic, not a full audit - adds some time; findings are reported separately from the formal QA steps.
@@ -46,9 +52,10 @@ Any combination, or none, may be selected - none is the normal/default case and 
 
 ## 5. Run QA Lint and check ticket hygiene
 
-Spawn the `qa-linter` subagent (Agent tool, `subagent_type: "qa-bot:qa-linter"`). In its prompt, give it: the ticket's `description` (or the words "Not provided" if it's empty), the `qaStatement`, the full contents of `context/<projectKey>.md`, and the exact target path `<run-dir>/lint.json` to write its findings to.
+Run whichever checks step 4 left on. For each one that was turned off, write its file as `{ "findings": [], "skipped": true }` instead, so the summary records that it didn't run.
 
-While it runs, read `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/ticket-hygiene.md` and follow it to write `<run-dir>/hygiene.json`.
+- **QA statement lint:** spawn the `qa-linter` subagent (Agent tool, `subagent_type: "qa-bot:qa-linter"`). In its prompt, give it: the ticket's `description` (or the words "Not provided" if it's empty), the `qaStatement`, the full contents of `context/<projectKey>.md`, and the exact target path `<run-dir>/lint.json` to write its findings to.
+- **Ticket hygiene:** while the linter runs, read `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/ticket-hygiene.md` and follow it to write `<run-dir>/hygiene.json`.
 
 Once the linter finishes, read `<run-dir>/lint.json`.
 

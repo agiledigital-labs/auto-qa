@@ -39,6 +39,8 @@ Your Claude session may need to be reloaded after connecting MCP servers for the
 
 Any ticket reference works (`#412`, `ENG-77`, …). If it isn't shaped like `PROJ-123`, you're asked which project it belongs to.
 
+For Jira tickets, it also checks the ticket's hygiene alongside the lint. The ticket must be in one of the project's QA-ready statuses, which you're asked once and which are recorded as `QA-ready statuses` under `## Issue Tracker` in `context/PROJ.md` (record `not checked` to skip the check). Until they're recorded, non-interactive runs only reject statuses in Jira's To Do category. The check also looks for unfinished sub-tasks and unresolved `is blocked by` links. A ticket that isn't QA-ready stops the run, unless you choose to proceed anyway.
+
 This is interactive by design. On the first run for a project it asks where the system is deployed (app and/or API URL) and how to authenticate, and saves the answers to `context/PROJ.md`. It also records which issue tracker the project uses. For Jira via MCP, it works out which field (or description heading) holds the QA statement, confirms that with you, and records it. Later, if a QA statement is missing context the tool can't infer (login, API auth, test data), it asks and saves that too, so future tickets in the same project don't need to ask again. Only project-level facts are saved, summarised at a high level; details specific to one ticket (a particular record, a fixture only that ticket needs) are used for that run only.
 
 Commit `context/PROJ.md` so the whole team shares the same context. It holds:
@@ -66,14 +68,14 @@ After a developer addresses issues from a run (and perhaps amends the QA stateme
 /qa-bot:qa-lint PROJ-123
 ```
 
-Fetches the ticket the same way and runs only the linter - nothing is executed against the system. Useful for checking a QA statement before a ticket reaches QA. The report lands in `runs/<TICKET>-<timestamp>/lint.md`, ready to paste into the ticket (or posted as a Jira comment, as for `qa-run`), with a verdict on whether the QA statement is ready to execute. It shares `context/PROJ.md` with `qa-run`, so the first-run setup questions apply here too.
+Fetches the ticket the same way and runs only the linter - nothing is executed against the system. Useful for checking a QA statement before a ticket reaches QA. It runs the same ticket hygiene checks as `qa-run`. A ticket that isn't in a QA-ready status is reported as not ready to execute. The report lands in `runs/<TICKET>-<timestamp>/lint.md`, ready to paste into the ticket (or posted as a Jira comment, as for `qa-run`), with a verdict on whether the QA statement is ready to execute. It shares `context/PROJ.md` with `qa-run`, so the first-run setup questions apply here too.
 
 ### Non-interactive (CI/CD)
 
 Add `--non-interactive` to either command to run unattended. Nothing is asked: each point that would ask either uses a flag or a safe default, or stops the run with a message saying what's missing.
 
 ```bash
-claude -p "/qa-bot:qa-run PROJ-123 --non-interactive --ticket-file ticket.json --run-dir runs/ci --extras regression" \
+PLAYWRIGHT_MCP_HEADLESS=true claude -p "/qa-bot:qa-run PROJ-123 --non-interactive --ticket-file ticket.json --run-dir runs/ci --extras regression" \
   --plugin-dir "$QA_BOT" --add-dir "$QA_BOT" \
   --permission-mode acceptEdits \
   --allowedTools "Bash(mkdir:*)" "Bash(test:*)" "Bash(grep:*)" "Bash(echo:*)" "Bash(command -v curl)" "Bash(curl:*)" \
@@ -98,9 +100,9 @@ Every run writes `<run-dir>/result.json` - `{ "skill", "key", "status": "complet
 
 Non-interactive defaults:
 - **Context:** `context/PROJ.md` must already exist (committed from an interactive run), and so must a Jira field mapping if tickets are fetched from Jira. Neither is created or modified in this mode.
-- **Blocking lint findings:** missing-context, clarity and scope-mismatch findings stop the run. Steps needing an external resource are skipped and reported as not run.
+- **Blocking lint findings:** missing-context, clarity and scope-mismatch findings stop the run, as does a ticket that isn't in a QA-ready status (or, with none recorded, is in Jira's To Do category). Steps needing an external resource are skipped and reported as not run.
 - **Secrets:** the Playwright MCP server reads them from `.env`, and API requests read them from the environment (`curl --variable`, curl ≥ 8.3), so the pipeline provides both - e.g. export them as job env vars and write `.env` from them. `.env` must exist even if empty.
-- **Browser UI:** set `PLAYWRIGHT_MCP_HEADLESS=true` on runners without a display, and add `mcp__plugin_qa-bot_playwright` to `--allowedTools`. For Jira, also allow your Atlassian server's `getJiraIssue` and `getAccessibleAtlassianResources` tools.
+- **Browser UI:** set `PLAYWRIGHT_MCP_HEADLESS=true` in the environment that launches `claude`. The Playwright MCP server starts before the skill reads `--non-interactive`, so it can't switch to headless by itself, and a non-interactive run with browser steps stops without this variable. Also add `mcp__plugin_qa-bot_playwright` to `--allowedTools`. For Jira, also allow your Atlassian server's `getJiraIssue` and `getAccessibleAtlassianResources` tools, plus `searchJiraIssuesUsingJql` for the hygiene checks.
 
 Never use `--dangerously-skip-permissions` or `bypassPermissions` here. Ticket text is untrusted input to an agent that can send authenticated requests, and with no one approving them, the allowlist is the only guard. Run only on tickets from trusted sources, and restrict the runner's network access to the system under test where you can.
 
@@ -118,9 +120,10 @@ The orchestrating session only checks that each referenced name is set in `.env`
 All under [plugins/qa-bot/](plugins/qa-bot/):
 
 - `skills/qa-run/SKILL.md` - orchestrates the run, and is the only piece that talks to you directly (setup questions, manual ticket entry, blocking-issue decisions). It fetches Jira tickets via an Atlassian MCP `getJiraIssue` tool when one is connected and the project uses Jira.
-- `skills/qa-lint/SKILL.md` - lint-only entry point: the same ticket intake as `qa-run`, then the linter, then a paste-ready `lint.md`.
+- `skills/qa-lint/SKILL.md` - lint-only entry point: the same ticket intake as `qa-run`, then the linter and ticket hygiene checks, then a paste-ready `lint.md`.
 - `skills/qa-run/run-options.md` - command-line flags, non-interactive mode rules and the `result.json` format, shared by both skills.
 - `skills/qa-run/ticket-intake.md` - run setup, project context loading/creation, and ticket fetching (Jira via MCP, or manual entry), shared by `qa-run` and `qa-lint`.
+- `skills/qa-run/ticket-hygiene.md` - the ticket readiness checks (QA-ready status, unfinished sub-tasks and blockers), shared by `qa-run` and `qa-lint`.
 - `skills/qa-run/rich-text-to-markdown.md` - rules for converting HTML or Atlassian Document Format ticket fields to Markdown. Images and smart links become explicit placeholders the linter can flag.
 - `skills/qa-run/summary-template.md` - the exact layout and accept/reject decision rules for the paste-ready `summary.md`.
 - `agents/qa-linter.md` - subagent that reviews the QA statement for clarity, scope-consistency with the description, missing context and access to external systems; severity-tags findings as `minor`/`major`/`blocking`.

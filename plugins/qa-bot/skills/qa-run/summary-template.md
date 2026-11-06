@@ -1,10 +1,12 @@
 # Rendering `summary.md`
 
-Build `<run-dir>/summary.md` from `ticket.json`, `lint.json` (treat as `{ "findings": [] }` if absent) and `execution.json` (treat as `{ "steps": [] }` if absent), plus `retest.json` if present. Follow this exactly - the output is pasted into the ticket as a comment, so consistency across runs matters more than prose quality. Copy `summary`, `stepText` and `notes` text verbatim; do not reword, merge or editorialise.
+Build `<run-dir>/summary.md` from `ticket.json`, `lint.json` (treat as `{ "findings": [] }` if absent), `hygiene.json` (none if absent) and `execution.json` (treat as `{ "steps": [] }` if absent), plus `retest.json` if present. Follow this exactly - the output is pasted into the ticket as a comment, so consistency across runs matters more than prose quality. Copy `summary`, `stepText` and `notes` text verbatim; do not reword, merge or editorialise.
 
 ## Inputs
 
 - `findings` = `lint.findings`
+- `hygiene` = `hygiene.json`, or none if absent
+- `hygieneFindings` = `hygiene.findings` (default `[]`)
 - `steps` = `execution.steps`
 - `exploration` = `execution.explorationFindings` (default `[]`)
 - `accessibility` = `execution.accessibilityFindings` (default `[]`)
@@ -15,7 +17,7 @@ Build `<run-dir>/summary.md` from `ticket.json`, `lint.json` (treat as `{ "findi
 
 Evaluate in order; the first match wins:
 
-1. **`❌ Reject`** - any finding has `severity: "blocking"`, or any entry in `allSteps` has `status: "fail"` and `severity: "blocking"`.
+1. **`❌ Reject`** - any entry in `findings` or `hygieneFindings` has `severity: "blocking"`, or any entry in `allSteps` has `status: "fail"` and `severity: "blocking"`.
 2. **`✅ Accept with follow-ups`** - any entry in `allSteps` has `status: "fail"`.
 3. **`✅ Accept`** - otherwise.
 
@@ -32,6 +34,10 @@ _Re-test of `<retest.previousRunDir>` (previous decision: <previous decision>). 
 
 ## QA Statement / Ticket Review                                    ← only if findings is non-empty
 - <lint line>                                                      ← one per finding, sorted blocking, major, minor
+
+## Ticket Hygiene                                                  ← only if hygieneFindings is non-empty or hygiene.statusCheck is "unrecorded"
+- <lint line>                                                      ← one per hygieneFindings entry, sorted blocking, major, minor
+_Ticket status checked only against Jira's To Do category: no QA-ready statuses are recorded for <ticket.projectKey>._   ← only if hygiene.statusCheck is "unrecorded"
 
 ## QA Steps
 - <step line>                                                      ← one per entry in steps, in order

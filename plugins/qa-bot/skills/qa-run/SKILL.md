@@ -1,6 +1,6 @@
 ---
 name: qa-run
-description: Fetch a ticket's QA statement (from Jira via an Atlassian MCP connection, or pasted manually from any issue tracker), lint it, execute it against a deployed system (browser UI via Playwright MCP, HTTP APIs via curl) and produce a paste-ready results summary.
+description: Fetch a ticket's QA statement (from Jira via an Atlassian MCP connection, or pasted manually from any issue tracker), lint it, check the ticket is ready for QA, execute it against a deployed system (browser UI via Playwright MCP, HTTP APIs via curl) and produce a paste-ready results summary.
 argument-hint: "[TICKET-KEY] [--non-interactive] [--project KEY] [--ticket-file PATH] [--run-dir PATH] [--extras regression,exploratory,accessibility] [--retest [PATH]] [--post-comment]"
 disable-model-invocation: true
 ---
@@ -44,13 +44,17 @@ Then, unless `--extras` was given, use `AskUserQuestion` (`multiSelect: true`) t
 
 Any combination, or none, may be selected - none is the normal/default case and it's fine if the user picks nothing. `--extras` names them as `regression`, `exploratory` and `accessibility`; ignore `accessibility` if the statement has no browser UI, and mention that in step 9. **Non-interactive:** without `--extras`, select none. Remember the selections; you'll use them in step 7.
 
-## 5. Run QA Lint
+## 5. Run QA Lint and check ticket hygiene
 
 Spawn the `qa-linter` subagent (Agent tool, `subagent_type: "qa-bot:qa-linter"`). In its prompt, give it: the ticket's `description` (or the words "Not provided" if it's empty), the `qaStatement`, the full contents of `context/<projectKey>.md`, and the exact target path `<run-dir>/lint.json` to write its findings to.
 
-Once it finishes, read `<run-dir>/lint.json`.
+While it runs, read `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/ticket-hygiene.md` and follow it to write `<run-dir>/hygiene.json`.
+
+Once the linter finishes, read `<run-dir>/lint.json`.
 
 ## 6. Resolve blocking issues, if any
+
+If `hygiene.json` has a `blocking` finding (the ticket isn't in a QA-ready status), handle it first: present it to the user plainly and ask them (a plain question, or `AskUserQuestion` with two options) whether to **Stop** - the ticket should reach a QA-ready status first - or **Proceed anyway** (e.g. a deliberate early run). If they stop, report the hygiene finding and stop - do not write a summary for an incomplete run. **Non-interactive:** stop, with the finding's summary in the message.
 
 If `lint.json` has any finding with `severity: "blocking"`:
 
@@ -88,7 +92,7 @@ First, check the prerequisites for the surfaces from step 4, without exposing an
   grep -qE '^[[:space:]]*(export[[:space:]]+)?NAME_ONE[[:space:]]*=[[:space:]]*[^[:space:]#]' .env && echo 'NAME_ONE: set' || echo 'NAME_ONE: missing'
   ```
   This prints names only. For any `missing`, tell the user which var(s) to add to `.env`, and that the Playwright MCP server reads `.env` only at startup, so it needs reconnecting via `/mcp` afterwards. Skip this check if there are no tokens.
-- **Browser UI:** the Playwright MCP tools are available (e.g. `mcp__plugin_qa-bot_playwright__browser_navigate` - use `ToolSearch` if deferred). If they aren't, the usual cause is that `.env` was missing when the session started; tell the user to reconnect the server via `/mcp` (or restart the session).
+- **Browser UI:** the Playwright MCP tools are available (e.g. `mcp__plugin_qa-bot_playwright__browser_navigate` - use `ToolSearch` if deferred). If they aren't, the usual cause is that `.env` was missing when the session started; tell the user to reconnect the server via `/mcp` (or restart the session). **Non-interactive:** also check that the browser will be headless: `test "$PLAYWRIGHT_MCP_HEADLESS" = true`. The server reads this only at startup, so if it fails, stop with a message saying to set `PLAYWRIGHT_MCP_HEADLESS=true` in the environment that launches `claude`.
 - **HTTP API:** `curl` is installed (`command -v curl`). Remind the user once that `.env` is also loaded by the shell for API requests, so any value containing spaces, `$` or quotes must be single-quoted there. **Non-interactive:** instead check that `curl --version` reports 8.3 or later (needed to read secrets from the environment).
 
 On a re-test, hand over the complete current QA statement, just as for a fresh run: every step is executed again, including those that passed before, and no earlier result or evidence is carried over. Don't tell `qa-executor` about the previous run or which steps failed in it, so it can't narrow its attention to them.
@@ -105,7 +109,7 @@ Split the QA statement into an ordered list of discrete steps if it isn't alread
 
   Don't be concerned if `qa-executor` reports that something in `context/<projectKey>.app-notes.md` didn't match reality (a selector, a flow, an endpoint) - that file is a best-effort, self-revising knowledge base, not a source of truth, and `qa-executor` is expected to adapt and correct it rather than treat the mismatch as a QA statement failure.
 
-  Once it finishes, if you have any pre-resolved steps from step 6, read `<run-dir>/execution.json`, splice the pre-resolved step entries back in at their original positions in the QA statement's order, and rewrite the file so `execution.json` reflects every step of the original QA statement, not just the automated ones. Leave `explorationFindings`/`accessibilityFindings`/`regressionScriptPath`, if present, untouched.
+  Once it finishes, if the surfaces include browser UI, call `mcp__plugin_qa-bot_playwright__browser_close` so the browser doesn't stay open if `qa-executor` stopped before closing it. Then, if you have any pre-resolved steps from step 6, read `<run-dir>/execution.json`, splice the pre-resolved step entries back in at their original positions in the QA statement's order, and rewrite the file so `execution.json` reflects every step of the original QA statement, not just the automated ones. Leave `explorationFindings`/`accessibilityFindings`/`regressionScriptPath`, if present, untouched.
 
 - If every step was pre-resolved (no steps remain to hand to `qa-executor`), don't spawn it at all - write `<run-dir>/execution.json` yourself directly, containing just the pre-resolved step entries in their original order. (All three optional extras require automated execution to have actually happened, so if you skipped spawning `qa-executor` entirely, none of them apply to this run regardless of what was selected in step 4 - mention that to the user in step 9.)
 
@@ -129,13 +133,15 @@ Read `<previous-run-dir>/execution.json` and match each entry of the new `steps`
 
 ## 8. Render the summary
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/summary-template.md` and follow it exactly to build `<run-dir>/summary.md` from `ticket.json`, `lint.json`, `execution.json` and, on a re-test, `retest.json` in the run directory.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/qa-run/summary-template.md` and follow it exactly to build `<run-dir>/summary.md` from `ticket.json`, `lint.json`, `hygiene.json` (if it exists), `execution.json` and, on a re-test, `retest.json` in the run directory.
 
 ## 9. Report to the user
 
 Print the full contents of `<run-dir>/summary.md` to the user (it's Markdown, formatted to paste into a ticket comment), and tell them the file path so they can find the screenshots and saved responses alongside it. Saved responses may contain tokens or personal data returned by the API - they stay local under `runs/`; mention that if any were saved. If a regression script was generated, point out its path, mention it's git-trackable and worth a quick review before committing or relying on it, and how to run it: a `.spec.ts` needs `@playwright/test` installed in the project (`npx playwright test <path>`); a `.test.mjs` needs only Node ≥ 20.12 (`node --test <path>`).
 
 If step 6 gathered any answers, say which were saved to `context/<projectKey>.md` and which were used for this run only, so the user can correct the split.
+
+If the hygiene check was skipped because a call failed, say why. If `hygiene.json` has `statusCheck: "unrecorded"`, tell the user to record the project's QA-ready statuses under `## Issue Tracker` in `context/<projectKey>.md` (e.g. `- QA-ready statuses: Ready for QA, In QA`), or run `/qa-bot:qa-run` interactively once to be asked.
 
 Then offer to post `summary.md` to the ticket, or post it, following "Posting the result to Jira" in `run-options.md`. Post nothing else to the issue tracker.
 

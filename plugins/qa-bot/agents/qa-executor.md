@@ -217,6 +217,10 @@ Don't go hunting elsewhere in the app.
 
 Record each check as an entry in `accessibilityFindings`, using the same shape as a `steps` entry (`stepText` describing what you checked, `status`: `"pass"` if no issue or `"fail"` with a `severity` if you found one, `notes`, and `screenshotPath` for any failure). Severity follows the same `blocking`/`major`/`minor` scale as normal steps, but calibrate for accessibility/UX impact specifically - e.g. a genuinely unusable-without-a-mouse flow is `major` or worse; a missing empty `alt` on a decorative image is `minor`.
 
+## Close the browser
+
+If you opened the browser, call `browser_close` once you've finished every browser action - the QA statement's steps and any exploratory or accessibility checks - whether or not steps failed. Capture any evidence screenshots before closing.
+
 ## Update the app-notes knowledge base
 
 After writing `execution.json`, update the app-notes file at the path you were given (create it if it doesn't exist yet) with anything this run taught you that would help a future run - on any ticket in this project - drive this system faster. Keep it high level: general patterns and conventions of the system, not the specifics of this ticket. For example:
